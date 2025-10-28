@@ -328,7 +328,7 @@ impl Beacon {
             let monitor = daemon.monitor().expect("Failed to monitor the daemon");
             match service_info {
                 Ok(info) => {
-                    let info = info.enable_addr_auto();
+                    
                     let fullname = info.get_fullname().to_string();
                     if let Err(e) = daemon.register(info) {
                         eprintln!("[mDNS] Registration error: {:?}", e);
@@ -386,7 +386,7 @@ impl Beacon {
     /// in real-time (e.g., logging or filtering).
     ///
     /// # Arguments
-    /// - `service_name`: The mDNS service type to search for (e.g. `"_verdant._tcp.local."`).
+    /// - `service_ident`: The mDNS service type to search for (e.g. `"_verdant._tcp.local."`).
     /// - `wait_for`: The stop condition controlling how long discovery runs.
     /// - `on_event`: Optional closure invoked for each [`ServiceEvent`].
     ///
@@ -394,17 +394,18 @@ impl Beacon {
     /// A vector of discovered [`Discovery`] instances.
 
     pub async fn discover(
-        service_name: &str,
+        service_ident: ServiceIdent,
         wait_for: WaitFor,
         mut on_event: Option<Box<dyn FnMut(Result<&ServiceEvent>) + Send>>,
     ) -> Result<Vec<Discovery>>
     {
+        let service_name = service_ident.into_service_type();
         // ---- Step 1: Query mDNS ----
         let daemon =
             ServiceDaemon::new()?;
 
         let receiver = daemon
-            .browse(service_name)?;
+            .browse(&service_name)?;
 
         println!("[mDNS] Browsing for {service_name}...");
 

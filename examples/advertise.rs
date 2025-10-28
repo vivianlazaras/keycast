@@ -12,7 +12,7 @@ async fn main() -> Result<()> {
     let ident = ServiceIdent::TCP("verdant".to_string());
 
     let beacon = Beacon::new(ident, &pubkey, &validate_key).await;
-
+    println!("beacon: {:?}", beacon);
     let handle = beacon.advertise().await?;
 
     println!("[Advertiser] Beacon broadcasting. Press Ctrl+C to exit.");
