@@ -13,17 +13,13 @@
 //! or ad-hoc networks.
 
 use crate::crypto::sha256_base64;
-use crate::errors::{Result, BeaconError};
+use crate::errors::{BeaconError, Result};
 use hostname::get;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use serde_derive::{Deserialize, Serialize};
-use std::net::{IpAddr};
-use std::time::{Instant};
-use tokio::{
-    net::UdpSocket,
-    task::JoinHandle,
-    time::{Duration},
-};
+use std::net::IpAddr;
+use std::time::Instant;
+use tokio::{net::UdpSocket, task::JoinHandle, time::Duration};
 
 use mdns_sd::ServiceEvent;
 use tokio::sync::mpsc;
@@ -73,6 +69,8 @@ pub struct Discovery {
     pub port: u16,
     pub name: String,
     pub host: String,
+    pub enc_pubkey: String,
+    pub ident_pubkey: String,
 }
 
 /// Represents a running multicast listener created by [`Discovery::join_multicast`].
@@ -90,7 +88,7 @@ pub struct DiscoveryHandle {
 /// Each beacon carries identifying and cryptographic information that allows
 /// peers to verify authenticity and establish secure communication.
 ///
-/// Fields like [`pubkey`] and [`validate_key`] are expected to be base64-encoded strings.
+/// Fields like [`enc_pubkey`] and [`ident_pubkey`] are expected to be base64-encoded strings.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Beacon {
     /// Unique node identifier (e.g., UUID or hash).
@@ -106,11 +104,9 @@ pub struct Beacon {
     /// service identifier constructor such as _myservice._tcp.local.
     ident: ServiceIdent,
     /// base64 encoded string
-    pubkey: String,
+    enc_pubkey: String,
     /// Base64-encoded signing key associated with this beacon.
-    validate_key: String,
-    /// the multicast IP address.
-    group: IpAddr,
+    ident_pubkey: String,
 }
 
 /// used to construct a _googlecast._tcp.local. service type identifier
@@ -134,15 +130,14 @@ impl ServiceIdent {
     }
 }
 
-
 impl Beacon {
     /// Creates a new instance of `Beacon`, automatically generating an ID from
     /// the provided public key and attempting to detect the system’s primary IP address.
     ///
     /// # Arguments
     ///
-    /// * `pubkey` — The node’s public key, used to compute its unique SHA-256-based ID.
-    /// * `validate_key` — A key or token used for validating peer authenticity.
+    /// * `enc_pubkey` — The node’s public key, used to compute its unique SHA-256-based ID.
+    /// * `ident_pubkey` — A key or token used for validating peer authenticity.
     ///
     /// # Behavior
     ///
@@ -162,16 +157,14 @@ impl Beacon {
     /// - `ip`: the detected primary outbound IP, or `None` if unavailable
     /// - `port`: defaulting to `4848`
     /// - `ttl`: defaulting to `60`
-    /// - `group`: set to the IPv4 multicast address `239.0.0.1`
-    ///
     /// # Example
     ///
     /// ```ignore
     /// use keycast::discovery::{Beacon, ServiceIdent};
     /// let ident = ServiceIdent::TCP("myservice".to_string());
-    /// let node = Beacon::new(ident, "my_public_key", "my_validation_key").await;
+    /// let node = Beacon::new(ident, "my_public_key", "my_ident_pubkey").await;
     /// ```
-    pub async fn new(ident: ServiceIdent, pubkey: &str, validate_key: &str) -> Self {
+    pub async fn new(ident: ServiceIdent, enc_pubkey: &str, ident_pubkey: &str) -> Self {
         // Try to determine the primary outbound IP
         let ip = match Self::get_primary_ip().await {
             Ok(addr) => Some(addr),
@@ -181,7 +174,7 @@ impl Beacon {
             }
         };
 
-        let id = sha256_base64(pubkey);
+        let id = sha256_base64(enc_pubkey);
         Self {
             id,
             name: None,
@@ -189,9 +182,8 @@ impl Beacon {
             port: 4848,
             ttl: 60,
             ident,
-            pubkey: pubkey.to_string(),
-            validate_key: validate_key.to_string(),
-            group: "239.0.0.1".parse().expect("failed to parse default IpAddr"),
+            enc_pubkey: enc_pubkey.to_string(),
+            ident_pubkey: ident_pubkey.to_string(),
         }
     }
 
@@ -201,14 +193,6 @@ impl Beacon {
         socket.connect("8.8.8.8:80").await?;
         let local_addr = socket.local_addr()?;
         Ok(local_addr.ip())
-    }
-
-    /// Returns `true` if the given IP address is multicast (IPv4 or IPv6).
-    fn is_multicast(addr: &IpAddr) -> bool {
-        match addr {
-            IpAddr::V4(ipv4) => ipv4.is_multicast(),
-            IpAddr::V6(ipv6) => ipv6.is_multicast(),
-        }
     }
 
     /// Advertises this beacon over mDNS and (optionally) UDP multicast.
@@ -221,10 +205,6 @@ impl Beacon {
     ///
     /// Returns an [`AdvertisementHandle`] that can be used to monitor events.
     pub async fn advertise(&self) -> Result<AdvertisementHandle> {
-        if !Self::is_multicast(&self.group) {
-            return Err(BeaconError::NotMulticastAddress(self.group));
-        }
-
         let hostname = get()
             .ok()
             .and_then(|h| h.into_string().ok())
@@ -243,14 +223,16 @@ impl Beacon {
             let properties = [
                 ("protocol".to_string(), "keycast".to_string()),
                 ("version".to_string(), "0.0.1".to_string()),
-                ("pubkey".to_string(), self.pubkey.clone()),
-                ("validation_key".to_string(), self.validate_key.clone()),
+                ("enc_pubkey".to_string(), self.enc_pubkey.clone()),
+                ("ident_pubkey".to_string(), self.ident_pubkey.clone()),
             ];
             let service_info = ServiceInfo::new(
                 "_verdant._tcp.local.",
                 &instance_name,
                 &service_hostname,
-                self.ip.map(|v| v.to_string()).unwrap_or_else(|| "".to_string()),
+                self.ip
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "".to_string()),
                 port_clone,
                 &properties[..], // No TXT records — Beacon carries metadata
             );
@@ -258,7 +240,6 @@ impl Beacon {
             let monitor = daemon.monitor().expect("Failed to monitor the daemon");
             match service_info {
                 Ok(info) => {
-                    
                     let fullname = info.get_fullname().to_string();
                     if let Err(e) = daemon.register(info) {
                         eprintln!("[mDNS] Registration error: {:?}", e);
@@ -298,15 +279,12 @@ impl Beacon {
         service_ident: ServiceIdent,
         wait_for: WaitFor,
         mut on_event: Option<Box<dyn FnMut(Result<&ServiceEvent>) + Send>>,
-    ) -> Result<Vec<Discovery>>
-    {
+    ) -> Result<Vec<Discovery>> {
         let service_name = service_ident.into_service_type();
         // ---- Step 1: Query mDNS ----
-        let daemon =
-            ServiceDaemon::new()?;
+        let daemon = ServiceDaemon::new()?;
 
-        let receiver = daemon
-            .browse(&service_name)?;
+        let receiver = daemon.browse(&service_name)?;
 
         println!("[mDNS] Browsing for {service_name}...");
 
@@ -352,16 +330,28 @@ impl Beacon {
                         .map(|ip| ip.to_ip_addr())
                         .collect::<Vec<_>>();
 
-
-                    let version = info.get_property_val_str("version")
+                    let version = info
+                        .get_property_val_str("version")
                         .map(|s| s.to_string())
                         .ok_or_else(|| BeaconError::MissingProperty("version"))?;
+                    let enc_pubkey = info
+                        .get_property_val_str("enc_pubkey")
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| BeaconError::MissingProperty("enc_pubkey"))?;
+
+                    let ident_pubkey = info
+                        .get_property_val_str("ident_pubkey")
+                        .map(|s| s.to_string())
+                        .ok_or_else(|| BeaconError::MissingProperty("ident_pubkey"))?;
+
                     let discovery = Discovery {
                         name: info.get_fullname().to_string(),
                         host: info.get_hostname().to_string(),
                         addrs: addrs,
                         port: info.get_port(),
-                        version
+                        version,
+                        ident_pubkey,
+                        enc_pubkey,
                     };
 
                     println!("[mDNS] Resolved: {}", discovery.name);
@@ -397,15 +387,15 @@ impl Beacon {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::IpAddr;
     use crate::crypto::generate_rsa_pkcs8_pair;
+    use std::net::IpAddr;
 
     #[tokio::test]
     async fn beacon_serialization_roundtrip() {
-        let (privkey, pubkey) = generate_rsa_pkcs8_pair();
-        let (encode_key, validate_key) = generate_rsa_pkcs8_pair();
+        let (privkey, enc_pubkey) = generate_rsa_pkcs8_pair();
+        let (encode_key, ident_pubkey) = generate_rsa_pkcs8_pair();
         let ident = ServiceIdent::TCP("myservice".to_string());
-        let b = Beacon::new(ident, &pubkey, &validate_key).await;
+        let b = Beacon::new(ident, &enc_pubkey, &ident_pubkey).await;
 
         let json = serde_json::to_string(&b).unwrap();
         let parsed: Beacon = serde_json::from_str(&json).unwrap();
@@ -414,7 +404,7 @@ mod tests {
         assert_eq!(b.name, parsed.name);
         assert_eq!(b.ip, parsed.ip);
         assert_eq!(b.port, parsed.port);
-        assert_eq!(b.pubkey, parsed.pubkey);
+        assert_eq!(b.enc_pubkey, parsed.enc_pubkey);
     }
 
     #[tokio::test]
@@ -422,11 +412,11 @@ mod tests {
         let addr: IpAddr = "239.255.0.1".parse()?;
         let port = 9999;
 
-        let (privkey, pubkey) = generate_rsa_pkcs8_pair();
-        let (encode_key, validate_key) = generate_rsa_pkcs8_pair();
+        let (privkey, enc_pubkey) = generate_rsa_pkcs8_pair();
+        let (encode_key, ident_pubkey) = generate_rsa_pkcs8_pair();
         let ident = ServiceIdent::TCP("myservice".to_string());
-        
-        let b = Beacon::new(ident, &pubkey, &validate_key).await;
+
+        let b = Beacon::new(ident, &enc_pubkey, &ident_pubkey).await;
 
         // Start advertiser
         let adv = b.advertise().await?;

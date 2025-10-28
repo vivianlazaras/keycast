@@ -1,4 +1,3 @@
-
 use keycast::discovery::{Beacon, ServiceIdent, WaitFor}; // replace with your crate name
 use keycast::errors::Result;
 

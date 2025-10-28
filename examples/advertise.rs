@@ -1,11 +1,10 @@
-use mdns_sd::DaemonEvent;
 use keycast::crypto::generate_rsa_pkcs8_pair;
-use keycast::errors::Result;
 use keycast::discovery::{Beacon, ServiceIdent};
+use keycast::errors::Result;
+use mdns_sd::DaemonEvent;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-
     let (_privkey, pubkey) = generate_rsa_pkcs8_pair();
     let (_encode_key, validate_key) = generate_rsa_pkcs8_pair();
 

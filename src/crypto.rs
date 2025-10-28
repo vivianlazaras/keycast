@@ -8,7 +8,6 @@ use rsa::{
 use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
 
-
 pub fn generate_rsa_pkcs8_pair() -> (String, String) {
     // Generate a 2048-bit RSA private key
     let mut rng = OsRng;

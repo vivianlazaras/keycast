@@ -1,12 +1,10 @@
-use thiserror::Error;
 use std::io;
 use std::net::AddrParseError;
-
+use thiserror::Error;
 
 /// Errors that can occur during multicast discovery and advertisement.
 #[derive(Debug, Error)]
 pub enum BeaconError {
-    
     /// Error during UDP socket binding or multicast join.
     #[error("Network error: {0}")]
     NetworkError(#[from] io::Error),
