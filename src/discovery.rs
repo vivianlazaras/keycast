@@ -33,13 +33,6 @@ pub struct AdvertisementHandle {
     pub monitor: mdns_sd::Receiver<mdns_sd::DaemonEvent>,
 }
 
-/// Represents multicast events received by the [`Discovery`] process.
-///
-/// This is a placeholder for structured multicast messages, such as parsed [`Beacon`]s.
-/// In the future, variants can be added to represent different message types.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum MultiCastEvent {}
-
 /// Controls how long the discovery process should run and when to stop.
 ///
 /// The [`WaitFor`] enum defines various stop conditions for discovery:
@@ -69,18 +62,7 @@ pub struct Discovery {
     pub port: u16,
     pub name: String,
     pub host: String,
-    pub enc_pubkey: String,
-    pub ident_pubkey: String,
-}
-
-/// Represents a running multicast listener created by [`Discovery::join_multicast`].
-///
-/// This handle provides access to:
-/// - The spawned listener task.
-/// - An MPSC channel receiver for [`MultiCastEvent`]s.
-pub struct DiscoveryHandle {
-    pub listener: JoinHandle<()>,
-    pub rx: mpsc::Receiver<MultiCastEvent>,
+    pub enc_pubkey_hash: String,
 }
 
 /// Represents a node (or service) being advertised on the network.
@@ -103,10 +85,8 @@ pub struct Beacon {
     ttl: u32,
     /// service identifier constructor such as _myservice._tcp.local.
     ident: ServiceIdent,
-    /// base64 encoded string
-    enc_pubkey: String,
-    /// Base64-encoded signing key associated with this beacon.
-    ident_pubkey: String,
+    /// base64 encoded sha2 256 hash of the public key
+    enc_pubkey_hash: String,
 }
 
 /// used to construct a _googlecast._tcp.local. service type identifier
@@ -164,7 +144,7 @@ impl Beacon {
     /// let ident = ServiceIdent::TCP("myservice".to_string());
     /// let node = Beacon::new(ident, "my_public_key", "my_ident_pubkey").await;
     /// ```
-    pub async fn new(ident: ServiceIdent, enc_pubkey: &str, ident_pubkey: &str) -> Self {
+    pub async fn new(ident: ServiceIdent, enc_pubkey: &str) -> Self {
         // Try to determine the primary outbound IP
         let ip = match Self::get_primary_ip().await {
             Ok(addr) => Some(addr),
@@ -175,6 +155,8 @@ impl Beacon {
         };
 
         let id = sha256_base64(enc_pubkey);
+        let second = sha256_base64(enc_pubkey);
+        assert_eq!(id, second);
         Self {
             id,
             name: None,
@@ -182,8 +164,7 @@ impl Beacon {
             port: 4848,
             ttl: 60,
             ident,
-            enc_pubkey: enc_pubkey.to_string(),
-            ident_pubkey: ident_pubkey.to_string(),
+            enc_pubkey_hash: sha256_base64(&enc_pubkey),
         }
     }
 
@@ -223,8 +204,7 @@ impl Beacon {
             let properties = [
                 ("protocol".to_string(), "keycast".to_string()),
                 ("version".to_string(), "0.0.1".to_string()),
-                ("enc_pubkey".to_string(), self.enc_pubkey.clone()),
-                ("ident_pubkey".to_string(), self.ident_pubkey.clone()),
+                ("enc_pubkey_hash".to_string(), self.enc_pubkey_hash.clone()),
             ];
             let service_info = ServiceInfo::new(
                 "_verdant._tcp.local.",
@@ -334,15 +314,12 @@ impl Beacon {
                         .get_property_val_str("version")
                         .map(|s| s.to_string())
                         .ok_or_else(|| BeaconError::MissingProperty("version"))?;
-                    let enc_pubkey = info
-                        .get_property_val_str("enc_pubkey")
+                    
+                    let enc_pubkey_hash = info
+                        .get_property_val_str("enc_pubkey_hash")
                         .map(|s| s.to_string())
-                        .ok_or_else(|| BeaconError::MissingProperty("enc_pubkey"))?;
-
-                    let ident_pubkey = info
-                        .get_property_val_str("ident_pubkey")
-                        .map(|s| s.to_string())
-                        .ok_or_else(|| BeaconError::MissingProperty("ident_pubkey"))?;
+                        .ok_or_else(|| BeaconError::MissingProperty("enc_pubkey_hash"))?;
+                    
 
                     let discovery = Discovery {
                         name: info.get_fullname().to_string(),
@@ -350,8 +327,7 @@ impl Beacon {
                         addrs: addrs,
                         port: info.get_port(),
                         version,
-                        ident_pubkey,
-                        enc_pubkey,
+                        enc_pubkey_hash,
                     };
 
                     println!("[mDNS] Resolved: {}", discovery.name);
@@ -392,10 +368,9 @@ mod tests {
 
     #[tokio::test]
     async fn beacon_serialization_roundtrip() {
-        let (privkey, enc_pubkey) = generate_rsa_pkcs8_pair();
-        let (encode_key, ident_pubkey) = generate_rsa_pkcs8_pair();
+        let (_privkey, enc_pubkey) = generate_rsa_pkcs8_pair();
         let ident = ServiceIdent::TCP("myservice".to_string());
-        let b = Beacon::new(ident, &enc_pubkey, &ident_pubkey).await;
+        let b = Beacon::new(ident, &enc_pubkey).await;
 
         let json = serde_json::to_string(&b).unwrap();
         let parsed: Beacon = serde_json::from_str(&json).unwrap();
@@ -404,7 +379,7 @@ mod tests {
         assert_eq!(b.name, parsed.name);
         assert_eq!(b.ip, parsed.ip);
         assert_eq!(b.port, parsed.port);
-        assert_eq!(b.enc_pubkey, parsed.enc_pubkey);
+        assert_eq!(b.enc_pubkey_hash, parsed.enc_pubkey_hash);
     }
 
     #[tokio::test]
@@ -412,11 +387,10 @@ mod tests {
         let addr: IpAddr = "239.255.0.1".parse()?;
         let port = 9999;
 
-        let (privkey, enc_pubkey) = generate_rsa_pkcs8_pair();
-        let (encode_key, ident_pubkey) = generate_rsa_pkcs8_pair();
+        let (_privkey, enc_pubkey) = generate_rsa_pkcs8_pair();
         let ident = ServiceIdent::TCP("myservice".to_string());
 
-        let b = Beacon::new(ident, &enc_pubkey, &ident_pubkey).await;
+        let b = Beacon::new(ident, &enc_pubkey).await;
 
         // Start advertiser
         let adv = b.advertise().await?;

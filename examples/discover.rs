@@ -12,10 +12,7 @@ async fn main() -> Result<()> {
                 println!("[Discover] Found {} beacons:", beacons.len());
                 let mut iter = beacons.into_iter();
                 while let Some(b) = iter.next() {
-                    println!(
-                        "  - ID: {}\n    Name: {:?}\n    Addrs: {:?}:{}\n",
-                        b.host, b.name, b.addrs, b.port
-                    );
+                    println!("discovered: {:?}", b);
                 }
             }
         }

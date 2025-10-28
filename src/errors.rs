@@ -36,6 +36,8 @@ pub enum BeaconError {
     /// mDNS error
     #[error("mdns_sd error: {0}")]
     MdnsError(#[from] mdns_sd::Error),
+    #[error("expected sha256 hash of {0} received hash value of {1}")]
+    InvalidHostName(String, String),
 }
 
 pub type Result<T> = std::result::Result<T, BeaconError>;
