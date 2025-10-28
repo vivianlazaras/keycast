@@ -19,10 +19,9 @@ use mdns_sd::{ServiceDaemon, ServiceInfo};
 use serde_derive::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::time::Instant;
-use tokio::{net::UdpSocket, task::JoinHandle, time::Duration};
+use tokio::{net::UdpSocket, time::Duration};
 
 use mdns_sd::ServiceEvent;
-use tokio::sync::mpsc;
 
 /// Represents a handle to a running advertisement process.
 ///
@@ -63,6 +62,17 @@ pub struct Discovery {
     pub name: String,
     pub host: String,
     pub enc_pubkey_hash: String,
+}
+
+#[cfg(feature = "rustls-verifier")]
+impl Discovery {
+    pub fn rustls_webpki_verifier(self) -> crate::rustls::RustlsVerifier {
+        let root_certs = rustls::RootCertStore::empty();
+        let verifier = rustls::client::WebPkiServerVerifier::builder(root_certs.into())
+            .build()
+            .expect("failed to build empty verifier");
+        crate::rustls::RustlsVerifier::new(self, verifier)
+    }
 }
 
 /// Represents a node (or service) being advertised on the network.
@@ -314,12 +324,11 @@ impl Beacon {
                         .get_property_val_str("version")
                         .map(|s| s.to_string())
                         .ok_or_else(|| BeaconError::MissingProperty("version"))?;
-                    
+
                     let enc_pubkey_hash = info
                         .get_property_val_str("enc_pubkey_hash")
                         .map(|s| s.to_string())
                         .ok_or_else(|| BeaconError::MissingProperty("enc_pubkey_hash"))?;
-                    
 
                     let discovery = Discovery {
                         name: info.get_fullname().to_string(),

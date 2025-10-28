@@ -72,3 +72,5 @@
 pub mod crypto;
 pub mod discovery;
 pub mod errors;
+#[cfg(feature = "rustls-verifier")]
+pub mod rustls;
