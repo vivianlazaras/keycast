@@ -17,7 +17,7 @@ use crate::errors::{Result, BeaconError};
 use hostname::get;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use serde_derive::{Deserialize, Serialize};
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr};
 use std::time::{Instant};
 use tokio::{
     net::UdpSocket,
@@ -26,7 +26,6 @@ use tokio::{
 };
 
 use mdns_sd::ServiceEvent;
-use std::net::{Ipv4Addr, Ipv6Addr};
 use tokio::sync::mpsc;
 
 /// Represents a handle to a running advertisement process.
@@ -67,10 +66,6 @@ pub enum WaitFor {
 /// and the node’s own network address.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Discovery {
-    /// Multicast group IP address.
-    pub group_ip: IpAddr,
-    /// UDP port used for the multicast group.
-    pub group_port: u16,
     /// Protocol version string for compatibility.
     pub version: String,
     /// Local IP address of the discovered node.
@@ -78,70 +73,6 @@ pub struct Discovery {
     pub port: u16,
     pub name: String,
     pub host: String,
-}
-
-impl Discovery {
-    /// Joins a multicast group and begins listening for events.
-    ///
-    /// This function:
-    /// 1. Binds a UDP socket to the multicast port.
-    /// 2. Joins the multicast group (IPv4 or IPv6).
-    /// 3. Spawns an asynchronous listener that decodes [`MultiCastEvent`] messages.
-    ///
-    /// Returns a [`DiscoveryHandle`] that can be awaited to receive multicast events.
-    pub async fn join_multicast(&self) -> Result<DiscoveryHandle> {
-        // ---- Step 2: Join multicast group ----
-        let socket = UdpSocket::bind(SocketAddr::new(
-            match self.group_ip {
-                IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
-            },
-            self.group_port,
-        ))
-        .await?;
-
-        // Join group
-        match self.group_ip {
-            IpAddr::V4(mcast_v4) => {
-                socket
-                    .join_multicast_v4(mcast_v4, Ipv4Addr::UNSPECIFIED)?;
-            }
-            IpAddr::V6(mcast_v6) => {
-                socket
-                    .join_multicast_v6(&mcast_v6, 0)?;
-            }
-        }
-
-        println!(
-            "[Discovery] Joined multicast group {}:{}",
-            self.group_ip, self.group_port
-        );
-
-        // ---- Step 3: Receive Beacons ----
-        let (tx, rx) = mpsc::channel::<MultiCastEvent>(32);
-        let listener = tokio::spawn(async move {
-            let mut buf = vec![0u8; 2048];
-            loop {
-                match socket.recv_from(&mut buf).await {
-                    Ok((len, src)) => {
-                        let data = &buf[..len];
-                        match serde_json::from_slice::<MultiCastEvent>(data) {
-                            Ok(beacon) => {
-                                println!("[Discovery] Beacon from {:?}: {:?}", src, beacon);
-                                if tx.send(beacon).await.is_err() {
-                                    eprintln!("[Discovery] Channel closed");
-                                    break;
-                                }
-                            }
-                            Err(e) => eprintln!("[Discovery] Invalid beacon: {:?}", e),
-                        }
-                    }
-                    Err(e) => eprintln!("[Discovery] Receive error: {:?}", e),
-                }
-            }
-        });
-        Ok(DiscoveryHandle { listener, rx })
-    }
 }
 
 /// Represents a running multicast listener created by [`Discovery::join_multicast`].
@@ -310,11 +241,10 @@ impl Beacon {
 
         let monitor = if let Ok(daemon) = ServiceDaemon::new() {
             let properties = [
-                ("protocol".to_string(), "verdant".to_string()),
+                ("protocol".to_string(), "keycast".to_string()),
                 ("version".to_string(), "0.0.1".to_string()),
-                ("group".to_string(), self.group.to_string()),
                 ("pubkey".to_string(), self.pubkey.clone()),
-                ("validate_key".to_string(), self.validate_key.clone()),
+                ("validation_key".to_string(), self.validate_key.clone()),
             ];
             let service_info = ServiceInfo::new(
                 "_verdant._tcp.local.",
@@ -343,35 +273,6 @@ impl Beacon {
         } else {
             panic!("[mDNS] Failed to start service daemon");
         };
-
-        // ---- Spawn Multicast Beacon Sender ----
-        /*let multicast = tokio::spawn(async move {
-            let socket = match UdpSocket::bind(match m_addr {
-                IpAddr::V4(_) => "0.0.0.0:0",
-                IpAddr::V6(_) => "[::]:0",
-            })
-            .await
-            {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("[Beacon] Failed to bind UDP socket: {:?}", e);
-                    return;
-                }
-            };
-
-            let group_addr = SocketAddr::new(m_addr, beacon.port);
-            let mut interval = interval(Duration::from_secs(5));
-
-            loop {
-                interval.tick().await;
-
-                if let Ok(payload) = serde_json::to_vec(&beacon) {
-                    if let Err(e) = socket.send_to(&payload, group_addr).await {
-                        eprintln!("[Beacon] Send error: {:?}", e);
-                    }
-                }
-            }
-        });*/
 
         Ok(AdvertisementHandle { monitor })
     }
@@ -451,11 +352,6 @@ impl Beacon {
                         .map(|ip| ip.to_ip_addr())
                         .collect::<Vec<_>>();
 
-                    let group_ip = match info.get_property_val_str("group") {
-                        Some(g) => g.parse()?,
-                        None => return Err(BeaconError::MissingProperty("group"))
-                    };
-
 
                     let version = info.get_property_val_str("version")
                         .map(|s| s.to_string())
@@ -465,8 +361,6 @@ impl Beacon {
                         host: info.get_hostname().to_string(),
                         addrs: addrs,
                         port: info.get_port(),
-                        group_ip,
-                        group_port: info.get_port(),
                         version
                     };
 
