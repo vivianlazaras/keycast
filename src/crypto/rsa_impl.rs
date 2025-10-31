@@ -1,12 +1,11 @@
-/// Module for cryptography utility functions.
-///
 use rsa::{
-    RsaPrivateKey,
+    RsaPrivateKey, RsaPublicKey,
     pkcs8::{EncodePrivateKey, EncodePublicKey},
 };
 
+use super::*;
 use rand::rngs::OsRng;
-use sha2::{Digest, Sha256};
+use rsa::traits::PublicKeyParts;
 
 pub fn generate_rsa_pkcs8_pair() -> (String, String) {
     // Generate a 2048-bit RSA private key
@@ -28,20 +27,21 @@ pub fn generate_rsa_pkcs8_pair() -> (String, String) {
     (private_key_pem.to_string(), public_key_pem)
 }
 
-/// Compute the SHA-256 hash of `input` and return it as a lowercase hex string.
-///
-/// This is a **fast** cryptographic hash suitable for checksums, content-addressing,
-/// or inputs to signatures. **Do not** use SHA-256 alone for password hashing.
-///
-/// # Example
-///
-/// ```
-/// let base64 = keycast::crypto::sha256_base64("hello");
-/// assert_eq!(base64.len(), 44); // 32 bytes -> 64 hex chars
-/// ```
-pub fn sha256_base64(input: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
-    let result = hasher.finalize();
-    base64::encode(result)
+pub fn generate_rsa_pair() -> (RsaPrivateKey, RsaPublicKey) {
+    let mut rng = OsRng;
+
+    let private_key = RsaPrivateKey::new(&mut rng, 2048).expect("failed to generate key");
+    let public_key = private_key.to_public_key();
+
+    (private_key, public_key)
+}
+
+impl ToPublicKeyDer for rsa::RsaPublicKey {
+    fn key_algorithm(&self) -> KeyAlg {
+        if self.size() >= 4096 {
+            KeyAlg::Rsa4096
+        } else {
+            KeyAlg::Rsa2048
+        }
+    }
 }

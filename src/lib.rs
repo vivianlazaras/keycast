@@ -72,5 +72,11 @@
 pub mod crypto;
 pub mod discovery;
 pub mod errors;
+#[cfg(feature = "pkcs11")]
+pub mod pkcs11;
+#[cfg(feature = "rustls-reqwest")]
+pub mod reqwest;
 #[cfg(feature = "rustls-verifier")]
 pub mod rustls;
+#[cfg(feature = "rustls-verifier")]
+pub mod sign;

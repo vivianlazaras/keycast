@@ -38,6 +38,21 @@ pub enum BeaconError {
     MdnsError(#[from] mdns_sd::Error),
     #[error("expected sha256 hash of {0} received hash value of {1}")]
     InvalidHostName(String, String),
+    #[error("invalid encoding: {0}")]
+    InvalidEncoding(String),
+    #[error("invalid key algorithim: {0}")]
+    InvalidKeyAlgorithim(String),
+    #[error("invalid hash algorithim: {0}")]
+    InvalidHashAlgorithim(String),
+    #[error("expected four colon separated values found: {0} with {1} segments")]
+    InvalidKeyHashFormat(String, usize),
+    #[error("failed to encode key")]
+    KeyEncodingError,
+    #[error("failed to encode publlic key: {0}")]
+    SPKIError(#[from] pkcs8::spki::Error),
+    #[cfg(feature = "rustls-reqwest")]
+    #[error("reqwest error: {0}")]
+    ReqwestErr(#[from] reqwest::Error),
 }
 
 pub type Result<T> = std::result::Result<T, BeaconError>;

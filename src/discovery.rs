@@ -11,13 +11,14 @@
 //!
 //! The goal is to make it easy to build decentralized service discovery for local
 //! or ad-hoc networks.
-
-use crate::crypto::sha256_base64;
+use crate::crypto::*;
 use crate::errors::{BeaconError, Result};
 use hostname::get;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use serde_derive::{Deserialize, Serialize};
 use std::net::IpAddr;
+use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::{net::UdpSocket, time::Duration};
 
@@ -61,17 +62,27 @@ pub struct Discovery {
     pub port: u16,
     pub name: String,
     pub host: String,
-    pub enc_pubkey_hash: String,
+    pub pubkey_hash: KeyHash,
 }
 
 #[cfg(feature = "rustls-verifier")]
 impl Discovery {
-    pub fn rustls_webpki_verifier(self) -> crate::rustls::RustlsVerifier {
-        let root_certs = rustls::RootCertStore::empty();
+    pub fn rustls_webpki_verifier(
+        self,
+        root_certs: rustls::RootCertStore,
+        hasher: Arc<dyn HashAlgorithm>,
+    ) -> crate::rustls::RustlsVerifier {
         let verifier = rustls::client::WebPkiServerVerifier::builder(root_certs.into())
             .build()
             .expect("failed to build empty verifier");
-        crate::rustls::RustlsVerifier::new(self, verifier)
+        crate::rustls::RustlsVerifier::new(self, verifier, hasher)
+    }
+
+    #[cfg(feature = "rustls-reqwest")]
+    pub fn reqwest_client(self, hasher: Arc<dyn HashAlgorithm>) -> Result<reqwest::Client> {
+        use rustls::RootCertStore;
+        let verifier = self.rustls_webpki_verifier(RootCertStore::empty(), hasher);
+        Ok(crate::reqwest::reqwest_client(verifier)?)
     }
 }
 
@@ -95,8 +106,7 @@ pub struct Beacon {
     ttl: u32,
     /// service identifier constructor such as _myservice._tcp.local.
     ident: ServiceIdent,
-    /// base64 encoded sha2 256 hash of the public key
-    enc_pubkey_hash: String,
+    key: KeyHash,
 }
 
 /// used to construct a _googlecast._tcp.local. service type identifier
@@ -154,7 +164,7 @@ impl Beacon {
     /// let ident = ServiceIdent::TCP("myservice".to_string());
     /// let node = Beacon::new(ident, "my_public_key", "my_ident_pubkey").await;
     /// ```
-    pub async fn new(ident: ServiceIdent, enc_pubkey: &str) -> Self {
+    pub async fn new(ident: ServiceIdent, pem_pubkey: KeyHash) -> Self {
         // Try to determine the primary outbound IP
         let ip = match Self::get_primary_ip().await {
             Ok(addr) => Some(addr),
@@ -164,9 +174,7 @@ impl Beacon {
             }
         };
 
-        let id = sha256_base64(enc_pubkey);
-        let second = sha256_base64(enc_pubkey);
-        assert_eq!(id, second);
+        let id = format!("{}.local.", pem_pubkey.hash);
         Self {
             id,
             name: None,
@@ -174,9 +182,13 @@ impl Beacon {
             port: 4848,
             ttl: 60,
             ident,
-            enc_pubkey_hash: sha256_base64(&enc_pubkey),
+            key: pem_pubkey,
         }
     }
+
+    /*pub fn new(ident: ServiceIdent, name: &str, pem_pubkey: &str, ip: IpAddr, port: u16, ttl: u32) {
+        let id = format!("{}.local.", hash);
+    }*/
 
     async fn get_primary_ip() -> std::io::Result<IpAddr> {
         // This never actually sends data — just lets OS pick a route.
@@ -202,7 +214,7 @@ impl Beacon {
             .unwrap_or_else(|| self.id.clone());
 
         // ---- Spawn mDNS Advertisement ----
-        let service_hostname = format!("{}.local.", self.id.clone());
+        let service_hostname = self.id.clone();
         let name = match &self.name {
             Some(name) => name.to_string(),
             None => hostname,
@@ -214,7 +226,7 @@ impl Beacon {
             let properties = [
                 ("protocol".to_string(), "keycast".to_string()),
                 ("version".to_string(), "0.0.1".to_string()),
-                ("enc_pubkey_hash".to_string(), self.enc_pubkey_hash.clone()),
+                ("pubkey_hash".to_string(), self.key.to_string()),
             ];
             let service_info = ServiceInfo::new(
                 "_verdant._tcp.local.",
@@ -325,10 +337,12 @@ impl Beacon {
                         .map(|s| s.to_string())
                         .ok_or_else(|| BeaconError::MissingProperty("version"))?;
 
-                    let enc_pubkey_hash = info
-                        .get_property_val_str("enc_pubkey_hash")
-                        .map(|s| s.to_string())
-                        .ok_or_else(|| BeaconError::MissingProperty("enc_pubkey_hash"))?;
+                    let pubkey_hash = KeyHash::from_str(
+                        &info
+                            .get_property_val_str("pubkey_hash")
+                            .map(|s| s.to_string())
+                            .ok_or_else(|| BeaconError::MissingProperty("pubkey_hash"))?,
+                    )?;
 
                     let discovery = Discovery {
                         name: info.get_fullname().to_string(),
@@ -336,7 +350,7 @@ impl Beacon {
                         addrs: addrs,
                         port: info.get_port(),
                         version,
-                        enc_pubkey_hash,
+                        pubkey_hash,
                     };
 
                     println!("[mDNS] Resolved: {}", discovery.name);
@@ -372,7 +386,7 @@ impl Beacon {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::generate_rsa_pkcs8_pair;
+    use crate::crypto::rsa_impl::generate_rsa_pkcs8_pair;
     use std::net::IpAddr;
 
     #[tokio::test]
