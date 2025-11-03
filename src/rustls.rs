@@ -54,12 +54,13 @@ impl RustlsVerifier {
 
     /// This code is basically a copy of `rustls::WebPkiServerVerifier`s implementation of ServerCertVerifier.
     /// excluding code to leverage trust anchors bc this method should only be called after domain name public key hash match.
-    fn verify_server_certificate(&self,
+    fn verify_server_certificate(
+        &self,
         end_entity: &CertificateDer<'_>,
         intermediates: &[CertificateDer<'_>],
         server_name: &ServerName<'_>,
         ocsp_response: &[u8],
-        now: UnixTime
+        now: UnixTime,
     ) -> Result<ServerCertVerified, Error> {
         let cert = ParsedCertificate::try_from(end_entity)?;
 
@@ -82,7 +83,7 @@ impl RustlsVerifier {
             )
         };
         // verify_server_cert_signed_by_trust_anchor_impl
-        
+
         if !ocsp_response.is_empty() {
             trace!("Unvalidated OCSP response: {:?}", ocsp_response.to_vec());
         }

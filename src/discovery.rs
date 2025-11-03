@@ -84,6 +84,13 @@ impl Discovery {
         let verifier = self.rustls_webpki_verifier(RootCertStore::empty(), hasher);
         Ok(crate::reqwest::reqwest_client(verifier)?)
     }
+
+    pub fn urls(&self) -> Vec<String> {
+        self.addrs
+            .iter()
+            .map(|addr| format!("{}:{}", addr, self.port))
+            .collect::<Vec<String>>()
+    }
 }
 
 /// Represents a node (or service) being advertised on the network.
