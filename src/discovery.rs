@@ -16,6 +16,7 @@ use crate::errors::{BeaconError, Result};
 use hostname::get;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use serde_derive::{Deserialize, Serialize};
+use std::fmt;
 use std::net::IpAddr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -49,6 +50,41 @@ pub enum WaitFor {
     MinDiscovered(usize, Duration),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum WebProtocol {
+    Https,
+    Http,
+    Ws,
+    Wss,
+    Custom(String),
+}
+
+impl fmt::Display for WebProtocol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WebProtocol::Https => write!(f, "https"),
+            WebProtocol::Http => write!(f, "http"),
+            WebProtocol::Ws => write!(f, "ws"),
+            WebProtocol::Wss => write!(f, "wss"),
+            WebProtocol::Custom(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+impl FromStr for WebProtocol {
+    type Err = BeaconError;
+
+    fn from_str(s: &str) -> Result<Self> {
+        Ok(match s.to_ascii_lowercase().as_str() {
+            "https" => WebProtocol::Https,
+            "http" => WebProtocol::Http,
+            "ws" => WebProtocol::Ws,
+            "wss" => WebProtocol::Wss,
+            other => WebProtocol::Custom(other.to_string()),
+        })
+    }
+}
+
 /// Represents a discovered service or node on the multicast network.
 ///
 /// A [`Discovery`] instance describes both the multicast group parameters
@@ -59,6 +95,8 @@ pub struct Discovery {
     pub version: String,
     /// Local IP address of the discovered node.
     pub addrs: Vec<IpAddr>,
+    /// example 'https', 'http', 'ws'
+    pub protocol: WebProtocol,
     pub port: u16,
     pub name: String,
     pub host: String,
@@ -84,14 +122,13 @@ impl Discovery {
         let verifier = self.rustls_webpki_verifier(RootCertStore::empty(), hasher);
         Ok(crate::reqwest::reqwest_client(verifier)?)
     }
-
 }
 
 impl Discovery {
     pub fn urls(&self) -> Vec<String> {
         self.addrs
             .iter()
-            .map(|addr| format!("{}:{}", addr, self.port))
+            .map(|addr| format!("{}://{}:{}", self.protocol, addr, self.port))
             .collect::<Vec<String>>()
     }
 }
@@ -106,6 +143,7 @@ impl Discovery {
 pub struct Beacon {
     /// Unique node identifier (e.g., UUID or hash).
     id: String,
+    pub protocol: WebProtocol,
     /// Optional human-readable name for the node.
     pub name: Option<String>,
     /// Optional IP address where this beacon is reachable.
@@ -114,6 +152,7 @@ pub struct Beacon {
     pub port: u16,
     /// Time-to-live (TTL) for this advertisement, in seconds.
     pub ttl: u32,
+    pub version: String,
     /// service identifier constructor such as _myservice._tcp.local.
     ident: ServiceIdent,
     key: KeyHash,
@@ -194,6 +233,8 @@ impl Beacon {
             ttl: 60,
             ident,
             key: pem_pubkey,
+            protocol: WebProtocol::Https,
+            version: String::from("1.2"),
         }
     }
 
@@ -235,8 +276,8 @@ impl Beacon {
 
         let monitor = if let Ok(daemon) = ServiceDaemon::new() {
             let properties = [
-                ("protocol".to_string(), "keycast".to_string()),
-                ("version".to_string(), "0.0.1".to_string()),
+                ("protocol".to_string(), self.protocol.to_string()),
+                ("version".to_string(), self.version.clone()),
                 ("pubkey_hash".to_string(), self.key.to_string()),
             ];
             // I think if they're too long it causes an mdns_sd internal error.
@@ -358,6 +399,13 @@ impl Beacon {
                             .ok_or_else(|| BeaconError::MissingProperty("pubkey_hash"))?,
                     )?;
 
+                    let protocol = WebProtocol::from_str(
+                        &info
+                            .get_property_val_str("protocol")
+                            .map(|s| s.to_string())
+                            .ok_or_else(|| BeaconError::MissingProperty("protocol"))?,
+                    )?;
+
                     let discovery = Discovery {
                         name: info.get_fullname().to_string(),
                         host: info.get_hostname().to_string(),
@@ -365,6 +413,7 @@ impl Beacon {
                         port: info.get_port(),
                         version,
                         pubkey_hash,
+                        protocol,
                     };
 
                     println!("[mDNS] Resolved: {}", discovery.name);
@@ -402,6 +451,36 @@ mod tests {
     use super::*;
     use crate::crypto::rsa_impl::generate_rsa_pkcs8_pair;
     use std::net::IpAddr;
+    use std::str::FromStr;
+
+    #[test]
+    fn round_trip_standard_protocols() {
+        let cases = [
+            (WebProtocol::Https, "https"),
+            (WebProtocol::Http, "http"),
+            (WebProtocol::Ws, "ws"),
+            (WebProtocol::Wss, "wss"),
+        ];
+
+        for (proto, text) in cases {
+            assert_eq!(proto.to_string(), text);
+            assert_eq!(WebProtocol::from_str(text).unwrap(), proto);
+        }
+    }
+
+    #[test]
+    fn round_trip_custom_protocol() {
+        let custom = WebProtocol::Custom("ftp".to_string());
+        let s = custom.to_string();
+        assert_eq!(s, "ftp");
+        assert_eq!(WebProtocol::from_str(&s).unwrap(), custom);
+    }
+
+    #[test]
+    fn from_str_is_case_insensitive_for_known() {
+        assert_eq!(WebProtocol::from_str("HTTPS").unwrap(), WebProtocol::Https);
+        assert_eq!(WebProtocol::from_str("Ws").unwrap(), WebProtocol::Ws);
+    }
 
     #[tokio::test]
     async fn beacon_serialization_roundtrip() {
