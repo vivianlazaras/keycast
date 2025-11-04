@@ -180,8 +180,9 @@ impl Beacon {
                 None
             }
         };
-
-        let id = format!("{}.local.", pem_pubkey.hash);
+        let mut id_str = pem_pubkey.hash.clone();
+        id_str.truncate(48);
+        let id = format!("{}.local.", id_str);
         Self {
             id,
             name: None,
