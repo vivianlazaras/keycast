@@ -131,6 +131,10 @@ impl Discovery {
             .map(|addr| format!("{}://{}:{}", self.protocol, addr, self.port))
             .collect::<Vec<String>>()
     }
+
+    pub fn default_url(&self) -> Option<String> {
+        self.urls().get(0).map(|addr| format!("{}://{}:{}", self.protocol, addr, self.port))
+    }
 }
 
 /// Represents a node (or service) being advertised on the network.
