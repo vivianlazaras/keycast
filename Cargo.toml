@@ -3,7 +3,7 @@ name = "keycast"
 version = "0.1.1"
 edition = "2024"
 license = "MIT"
-docs = "docs.rs"
+repository = "https://github.com/vivianlazaras/keycast"
 description = "A convient wrapper around mdns_sd for local service discovery"
 
 [dependencies]
