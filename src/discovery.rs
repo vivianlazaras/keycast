@@ -53,7 +53,7 @@ pub enum WaitFor {
 ///
 /// A [`Discovery`] instance describes both the multicast group parameters
 /// and the node’s own network address.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Discovery {
     /// Protocol version string for compatibility.
     pub version: String,
@@ -85,6 +85,9 @@ impl Discovery {
         Ok(crate::reqwest::reqwest_client(verifier)?)
     }
 
+}
+
+impl Discovery {
     pub fn urls(&self) -> Vec<String> {
         self.addrs
             .iter()
