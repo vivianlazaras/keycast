@@ -235,6 +235,9 @@ impl Beacon {
                 ("version".to_string(), "0.0.1".to_string()),
                 ("pubkey_hash".to_string(), self.key.to_string()),
             ];
+            // I think if they're too long it causes an mdns_sd internal error.
+            assert!(service_hostname.len() < 64);
+            assert!(instance_name.len() < 64);
             let service_info = ServiceInfo::new(
                 "_verdant._tcp.local.",
                 &instance_name,
