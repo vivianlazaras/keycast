@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 docs = "docs.rs"
+description = "A convient wrapper around mdns_sd for local service discovery"
 
 [dependencies]
 base64 = "0.22.1"
