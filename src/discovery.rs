@@ -104,13 +104,13 @@ pub struct Beacon {
     /// Unique node identifier (e.g., UUID or hash).
     id: String,
     /// Optional human-readable name for the node.
-    name: Option<String>,
+    pub name: Option<String>,
     /// Optional IP address where this beacon is reachable.
-    ip: Option<IpAddr>,
+    pub ip: Option<IpAddr>,
     /// Port number used by the node.
-    port: u16,
+    pub port: u16,
     /// Time-to-live (TTL) for this advertisement, in seconds.
-    ttl: u32,
+    pub ttl: u32,
     /// service identifier constructor such as _myservice._tcp.local.
     ident: ServiceIdent,
     key: KeyHash,
