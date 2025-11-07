@@ -15,7 +15,7 @@
           config.android_sdk.accept_license = true;
         };
         pkgBuildInputs = with pkgs; [
-          pkgsCross.gnu32.glibc
+          pkgs.glibc
           rust
           sdk
           ndk
@@ -41,7 +41,7 @@
 
       in {
         packages.default = pkgs.stdenv.mkDerivation {
-          pname = "verdant";
+          pname = "libkeycast";
           version = "0.1.0";
 
           src = ./.;
@@ -86,6 +86,8 @@
             export CXX_aarch64_linux_android=aarch64-linux-android24-clang++
             export AR_aarch64_linux_android=llvm-ar
 
+            export GNU32="${pkgs.pkgsCross.gnu32.glibc.dev}";
+            export C_INCLUDE_PATH="${pkgs.pkgsCross.gnu32.glibc.dev}/include";
             echo "✅ Android NDK ready for Rust cross-compilation"
             echo "You can now run: cargo build --target aarch64-linux-android --release"
           '';

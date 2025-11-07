@@ -133,7 +133,7 @@ impl Discovery {
     }
 
     pub fn default_url(&self) -> Option<String> {
-        self.urls().get(0).map(|addr| format!("{}://{}:{}", self.protocol, addr, self.port))
+        self.urls().get(0).cloned()
     }
 }
 

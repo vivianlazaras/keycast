@@ -5,7 +5,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-use rcgen::*;
+//use rcgen::*;
 
 #[cfg(feature = "rsa")]
 pub mod rsa_impl;
@@ -342,7 +342,9 @@ impl KeyHash {
     ///   validity periods.
     /// * To maintain consistency across systems, use the same hash algorithm and encoding
     ///   conventions when comparing or publishing key fingerprints.
+    #[cfg(feature = "certgen")]
     pub fn generate_cert<H: HashAlgorithm>(hasher: &H) -> (Self, KeyPair, Certificate) {
+        use rcgen::*;
         let (privkey, pubkey) = crate::crypto::rsa_impl::generate_rsa_pkcs8_pair();
         // uses Encoding::Base64Der by default here
         let keypair =

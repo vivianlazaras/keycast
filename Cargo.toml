@@ -5,6 +5,7 @@ edition = "2024"
 license = "MIT"
 repository = "https://github.com/vivianlazaras/keycast"
 description = "A convient wrapper around mdns_sd for local service discovery"
+crate-type = ["cdylib"]
 
 [dependencies]
 base64 = "0.22.1"
@@ -16,7 +17,7 @@ log = "0.4.28"
 mdns-sd = "0.15.1"
 pkcs8 = "0.10.2"
 rand = "0.8"
-rcgen = { version = "0.14.5", features = ["pem"]}
+rcgen = { version = "0.14.5", optional = true, default-features = false, features = ["crypto", "ring", "pem"]}
 reqwest = { version = "0.12.24", optional = true, default-features = false, features = ["rustls-tls"] }
 rsa = { version = "0.9.8", optional = true }
 rustls = { version = "0.23.34", optional = true, features = ["ring"] }
@@ -42,3 +43,4 @@ ed25519 = ["dep:ed25519-dalek"]
 rsa = ["dep:rsa"]
 sha2 = ["dep:sha2"]
 default = ["sha2", "rsa", "ed25519"]
+certgen = ["dep:rcgen"]
