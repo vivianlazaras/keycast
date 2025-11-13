@@ -48,6 +48,7 @@ pub enum WaitFor {
     Timeout(Duration),
     /// Stop after receiving a minimum number of candidates or timeout.
     MinDiscovered(usize, Duration),
+    Continous,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -339,7 +340,7 @@ impl Beacon {
     pub async fn discover(
         service_ident: ServiceIdent,
         wait_for: WaitFor,
-        mut on_event: Option<Box<dyn FnMut(Result<&ServiceEvent>) + Send>>,
+        mut on_event: Option<Box<dyn FnMut(Result<Discovery>) + Send>>,
     ) -> Result<Vec<Discovery>> {
         let service_name = service_ident.into_service_type();
         // ---- Step 1: Query mDNS ----
@@ -376,11 +377,6 @@ impl Beacon {
                     continue;
                 }
             };
-
-            // ---- Step 3: Notify callback if provided ----
-            if let Some(cb) = on_event.as_mut() {
-                cb(Ok(&event));
-            }
 
             // ---- Step 4: Handle discovered services ----
             match event {
@@ -421,8 +417,11 @@ impl Beacon {
                     };
 
                     println!("[mDNS] Resolved: {}", discovery.name);
-                    discoveries.push(discovery);
-
+                    discoveries.push(discovery.clone());
+                    // ---- Step 3: Notify callback if provided ----
+                    if let Some(cb) = on_event.as_mut() {
+                        cb(Ok(discovery));
+                    }
                     // Check stop condition
                     match wait_for {
                         WaitFor::FirstDiscovery => break,
