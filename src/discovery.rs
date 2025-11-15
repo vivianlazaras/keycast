@@ -19,7 +19,6 @@ use serde_derive::{Deserialize, Serialize};
 use std::fmt;
 use std::net::IpAddr;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Instant;
 use tokio::{net::UdpSocket, time::Duration};
 
@@ -134,7 +133,7 @@ impl Discovery {
     }
 
     pub fn default_url(&self) -> Option<String> {
-        self.urls().get(0).cloned()
+        self.urls().first().cloned()
     }
 }
 
@@ -276,7 +275,7 @@ impl Beacon {
             Some(name) => name.to_string(),
             None => hostname,
         };
-        let instance_name = format!("{}", name);
+        let instance_name = name.to_string();
         let port_clone = self.port;
 
         let monitor = if let Ok(daemon) = ServiceDaemon::new() {
@@ -294,7 +293,7 @@ impl Beacon {
                 &service_hostname,
                 self.ip
                     .map(|v| v.to_string())
-                    .unwrap_or_else(|| "".to_string()),
+                    .unwrap_or_default(),
                 port_clone,
                 &properties[..], // No TXT records — Beacon carries metadata
             );
@@ -336,7 +335,7 @@ impl Beacon {
     ///
     /// # Returns
     /// A vector of discovered [`Discovery`] instances.
-
+    /// if using `WaitFor::Continous` this function won't return.
     pub async fn discover(
         service_ident: ServiceIdent,
         wait_for: WaitFor,
@@ -390,26 +389,26 @@ impl Beacon {
                     let version = info
                         .get_property_val_str("version")
                         .map(|s| s.to_string())
-                        .ok_or_else(|| BeaconError::MissingProperty("version"))?;
+                        .ok_or(BeaconError::MissingProperty("version"))?;
 
                     let pubkey_hash = KeyHash::from_str(
                         &info
                             .get_property_val_str("pubkey_hash")
                             .map(|s| s.to_string())
-                            .ok_or_else(|| BeaconError::MissingProperty("pubkey_hash"))?,
+                            .ok_or(BeaconError::MissingProperty("pubkey_hash"))?,
                     )?;
 
                     let protocol = WebProtocol::from_str(
                         &info
                             .get_property_val_str("protocol")
                             .map(|s| s.to_string())
-                            .ok_or_else(|| BeaconError::MissingProperty("protocol"))?,
+                            .ok_or(BeaconError::MissingProperty("protocol"))?,
                     )?;
 
                     let discovery = Discovery {
                         name: info.get_fullname().to_string(),
                         host: info.get_hostname().to_string(),
-                        addrs: addrs,
+                        addrs,
                         port: info.get_port(),
                         version,
                         pubkey_hash,

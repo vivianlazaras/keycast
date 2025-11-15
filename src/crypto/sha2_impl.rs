@@ -1,5 +1,7 @@
 use super::*;
 use sha2::{Digest, Sha256, Sha512};
+
+
 /// Compute the SHA-256 hash of `input` and return it as a lowercase hex string.
 ///
 /// This is a **fast** cryptographic hash suitable for checksums, content-addressing,
@@ -15,7 +17,7 @@ pub fn sha256_base64(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
     let result = hasher.finalize();
-    base64::encode(result)
+    base64_encode(&result)
 }
 
 #[derive(Debug)]

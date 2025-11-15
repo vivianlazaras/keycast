@@ -80,3 +80,4 @@ pub mod reqwest;
 pub mod rustls;
 #[cfg(feature = "rustls-verifier")]
 pub mod sign;
+pub mod utils;

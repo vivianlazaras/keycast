@@ -5,7 +5,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-//use rcgen::*;
+use crate::utils::*;
 
 #[cfg(feature = "rsa")]
 pub mod rsa_impl;
@@ -16,6 +16,7 @@ pub mod sha2_impl;
 #[cfg(feature = "ed25519")]
 pub mod ed25519;
 
+#[cfg(feature = "certgen")]
 use time::{Duration, OffsetDateTime};
 
 /// A public key that can be represented as PKCS#8 (SPKI) in DER or PEM form.
@@ -258,17 +259,17 @@ impl KeyHash {
         encoding: Encoding,
     ) -> Result<Self, BeaconError> {
         let der = key.to_public_key_der()?;
-        let digest = hasher.hash(&der.as_bytes());
+        let digest = hasher.hash(der.as_bytes());
 
         let hash_str = match encoding {
             Encoding::HexPem | Encoding::HexDer => hex::encode(&digest),
-            Encoding::Base64Pem | Encoding::Base64Der => base64::encode(&digest),
+            Encoding::Base64Pem | Encoding::Base64Der => base64_encode(&digest),
         };
 
         Ok(Self {
             key_encoding: encoding,
             key_alg: key.key_algorithm(),
-            hash_alg: hasher.name().into(),
+            hash_alg: hasher.name(),
             hash: hash_str,
         })
     }
@@ -351,7 +352,7 @@ impl KeyHash {
             rcgen::KeyPair::from_pkcs8_pem_and_sign_algo(&privkey, &rcgen::PKCS_RSA_SHA256)
                 .unwrap();
         let der = keypair.der_bytes();
-        let hash = base64::encode(hasher.hash(der));
+        let hash = base64_encode(hasher.hash(der));
         let name = format!("{}.local.", hash);
         let names = vec![name.clone()];
         let mut params = CertificateParams::new(names).unwrap();
@@ -381,6 +382,7 @@ impl KeyHash {
     }
 }
 
+#[cfg(feature = "certgen")]
 fn validity_period() -> (OffsetDateTime, OffsetDateTime) {
     let day = Duration::new(86400, 0);
     let yesterday = OffsetDateTime::now_utc().checked_sub(day).unwrap();
