@@ -1,5 +1,5 @@
-use base64::engine::general_purpose::{STANDARD, GeneralPurpose};
 use base64::Engine;
+use base64::engine::general_purpose::{GeneralPurpose, STANDARD};
 
 pub const DEFAULT_ENGINE: GeneralPurpose = STANDARD;
 

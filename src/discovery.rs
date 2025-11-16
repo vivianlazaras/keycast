@@ -115,13 +115,6 @@ impl Discovery {
             .expect("failed to build empty verifier");
         crate::rustls::RustlsVerifier::new(self, verifier, hasher)
     }
-
-    #[cfg(feature = "rustls-reqwest")]
-    pub fn reqwest_client(self, hasher: Arc<dyn HashAlgorithm>) -> Result<reqwest::Client> {
-        use rustls::RootCertStore;
-        let verifier = self.rustls_webpki_verifier(RootCertStore::empty(), hasher);
-        Ok(crate::reqwest::reqwest_client(verifier)?)
-    }
 }
 
 impl Discovery {
@@ -141,8 +134,6 @@ impl Discovery {
 ///
 /// Each beacon carries identifying and cryptographic information that allows
 /// peers to verify authenticity and establish secure communication.
-///
-/// Fields like [`enc_pubkey`] and [`ident_pubkey`] are expected to be base64-encoded strings.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Beacon {
     /// Unique node identifier (e.g., UUID or hash).
@@ -291,9 +282,7 @@ impl Beacon {
                 "_verdant._tcp.local.",
                 &instance_name,
                 &service_hostname,
-                self.ip
-                    .map(|v| v.to_string())
-                    .unwrap_or_default(),
+                self.ip.map(|v| v.to_string()).unwrap_or_default(),
                 port_clone,
                 &properties[..], // No TXT records — Beacon carries metadata
             );

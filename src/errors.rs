@@ -54,7 +54,7 @@ pub enum BeaconError {
     #[error("reqwest error: {0}")]
     ReqwestErr(#[from] reqwest::Error),
     #[error("base64 decode error")]
-    Base64Decode(#[from] base64::DecodeError)
+    Base64Decode(#[from] base64::DecodeError),
 }
 
 pub type Result<T> = std::result::Result<T, BeaconError>;

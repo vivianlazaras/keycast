@@ -1,6 +1,6 @@
 [package]
 name = "keycast"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/vivianlazaras/keycast"
@@ -42,5 +42,5 @@ pkcs11 = ["rustls-verifier", "dep:cryptoki"]
 ed25519 = ["dep:ed25519-dalek"]
 rsa = ["dep:rsa"]
 sha2 = ["dep:sha2"]
-default = ["sha2", "rsa", "ed25519"]
+default = ["sha2", "rsa", "ed25519", "certgen"]
 certgen = ["dep:rcgen"]

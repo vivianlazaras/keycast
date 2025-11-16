@@ -10,14 +10,14 @@ use crate::utils::*;
 #[cfg(feature = "rsa")]
 pub mod rsa_impl;
 
+#[cfg(feature = "certgen")]
+pub mod certgen;
+
 #[cfg(feature = "sha2")]
 pub mod sha2_impl;
 
 #[cfg(feature = "ed25519")]
 pub mod ed25519;
-
-#[cfg(feature = "certgen")]
-use time::{Duration, OffsetDateTime};
 
 /// A public key that can be represented as PKCS#8 (SPKI) in DER or PEM form.
 pub trait ToPublicKeyDer: pkcs8::EncodePublicKey {
@@ -273,121 +273,6 @@ impl KeyHash {
             hash: hash_str,
         })
     }
-
-    /// Generates a self-signed or issuer-signed X.509 certificate and its associated keypair,
-    /// producing a [`KeyHash`] for reference and verification.
-    ///
-    /// # Type Parameters
-    ///
-    /// * `H` — A hashing algorithm that implements the [`HashAlgorithm`] trait, used to derive
-    ///   a stable fingerprint (`KeyHash`) from the certificate’s public key material.
-    ///
-    /// # Parameters
-    ///
-    /// * `hasher` — A reference to the hashing algorithm implementation (e.g. [`Sha256Alg`],
-    ///   [`Blake3Alg`], etc.) used to compute the key fingerprint.
-    /// * `issuer` — The [`Issuer`] that will sign the generated certificate. This may represent
-    ///   a self-signed root CA or an intermediate authority.
-    ///
-    /// # Returns
-    ///
-    /// Returns a tuple containing:
-    /// 1. [`KeyHash`] — a metadata object describing the generated key (algorithm, encoding,
-    ///    hash, and hash algorithm used),
-    /// 2. [`KeyPair`] — the generated RSA keypair used to create the certificate, and
-    /// 3. [`Certificate`] — the resulting X.509 certificate signed by `issuer`.
-    ///
-    /// # Behavior
-    ///
-    /// * Generates a new RSA keypair (currently hardcoded as 2048-bit, PKCS#8 format).
-    /// * Computes a hash of the DER-encoded public key using the provided `hasher`.
-    /// * Uses the hash as the Common Name (CN) and primary subject name of the certificate,
-    ///   with `.local.` appended for internal identification.
-    /// * Configures standard extensions suitable for TLS server authentication:
-    ///   - `DigitalSignature` key usage
-    ///   - `ServerAuth` extended key usage
-    ///   - `Authority Key Identifier`
-    /// * The certificate validity period spans from one day before the current date to one day after.
-    ///
-    /// # Encoding
-    ///
-    /// * The resulting [`KeyHash`] uses `Encoding::Base64Der` by default.
-    /// * The certificate’s subject name (CN) is based on the base64-encoded hash of the
-    ///   canonical DER public key.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if:
-    /// * RSA keypair generation fails (should not happen under normal conditions),
-    /// * `rcgen::KeyPair::from_pkcs8_pem_and_sign_algo` or
-    ///   certificate signing fails unexpectedly.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use crate::crypto::{KeyHash, Sha256Alg};
-    /// use crate::issuer::root_issuer;
-    ///
-    /// let hasher = Sha256Alg;
-    /// let issuer = root_issuer(); // Your CA issuer
-    ///
-    /// let (keyhash, keypair, cert) = KeyHash::generate_cert(&hasher, &issuer);
-    ///
-    /// println!("Generated cert with fingerprint: {}", keyhash.hash);
-    /// println!("Subject CN: {}", cert.get_subject_alt_names()[0]);
-    /// ```
-    ///
-    /// # Notes
-    ///
-    /// * Future versions may support other key types (e.g., Ed25519) and configurable
-    ///   validity periods.
-    /// * To maintain consistency across systems, use the same hash algorithm and encoding
-    ///   conventions when comparing or publishing key fingerprints.
-    #[cfg(feature = "certgen")]
-    pub fn generate_cert<H: HashAlgorithm>(hasher: &H) -> (Self, KeyPair, Certificate) {
-        use rcgen::*;
-        let (privkey, pubkey) = crate::crypto::rsa_impl::generate_rsa_pkcs8_pair();
-        // uses Encoding::Base64Der by default here
-        let keypair =
-            rcgen::KeyPair::from_pkcs8_pem_and_sign_algo(&privkey, &rcgen::PKCS_RSA_SHA256)
-                .unwrap();
-        let der = keypair.der_bytes();
-        let hash = base64_encode(hasher.hash(der));
-        let name = format!("{}.local.", hash);
-        let names = vec![name.clone()];
-        let mut params = CertificateParams::new(names).unwrap();
-
-        let (yesterday, tomorrow) = validity_period();
-        params.distinguished_name.push(DnType::CommonName, name);
-        params.use_authority_key_identifier_extension = true;
-        params.key_usages.push(KeyUsagePurpose::DigitalSignature);
-        params
-            .extended_key_usages
-            .push(ExtendedKeyUsagePurpose::ServerAuth);
-        params.not_before = yesterday;
-        params.not_after = tomorrow;
-
-        let cert = params.self_signed(&keypair).unwrap();
-
-        (
-            Self {
-                key_alg: KeyAlg::Rsa2048,
-                hash,
-                hash_alg: hasher.name(),
-                key_encoding: Encoding::Base64Der,
-            },
-            keypair,
-            cert,
-        )
-    }
-}
-
-#[cfg(feature = "certgen")]
-fn validity_period() -> (OffsetDateTime, OffsetDateTime) {
-    let day = Duration::new(86400, 0);
-    let yesterday = OffsetDateTime::now_utc().checked_sub(day).unwrap();
-    let tomorrow = OffsetDateTime::now_utc().checked_add(day).unwrap();
-    (yesterday, tomorrow)
 }
 
 impl fmt::Display for KeyHash {
